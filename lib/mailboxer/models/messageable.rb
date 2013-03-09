@@ -11,7 +11,6 @@ module Mailboxer
         def acts_as_messageable
           has_many :messages, :as => :sender
           has_many :receipts, :order => 'created_at DESC', :dependent => :destroy, :as => :receiver
-
         end
       end
 
@@ -196,6 +195,12 @@ module Mailboxer
         end
 
         @search.results.map { |r| r.conversation }.uniq
+      end
+
+
+      # return messageable's notifications
+      def notifications 
+        receipts.notifications_receipts
       end
     end
   end
