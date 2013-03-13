@@ -25,42 +25,41 @@ class Message < Notification
   #Use Mailboxer::Models::Message.send_message instead.
   def deliver(reply = false, should_clean = true)
     self.clean if should_clean
-    temp_receipts = Array.new
-    #Receiver receipts
-    self.recipients.each do |r|
-      msg_receipt = Receipt.new
-      msg_receipt.notification = self
-      msg_receipt.is_read = false
-      msg_receipt.receiver = r
-      msg_receipt.mailbox_type = "inbox"
-      temp_receipts << msg_receipt
-    end
-    #Sender receipt
-    sender_receipt = Receipt.new
-    sender_receipt.notification = self
-    sender_receipt.is_read = true
-    sender_receipt.receiver = self.sender
-    sender_receipt.mailbox_type = "sentbox"
-    temp_receipts << sender_receipt
 
-    temp_receipts.each(&:valid?)
-    if temp_receipts.all? { |t| t.errors.empty? }
-      temp_receipts.each(&:save!) 	#Save receipts
+    #Receiver receipts
+    temp_receipts = self.recipients.map do |r|
+      msg_receipt = Receipt.new(:is_read => false, :mailbox_type => "inbox")
+      msg_receipt.notification = self
+      msg_receipt.receiver = r
+      msg_receipt
+    end
+
+    #Sender receipt
+    sender_receipt = Receipt.new(:is_read => true, :mailbox_type => "sentbox")
+    sender_receipt.notification = self
+    sender_receipt.receiver = self.sender
+    sender_receipt
+
+    # if any error occurs, stop to deliver
+    return sender_receipt if !temp_receipts.all?(&:valid?)
+    temp_receipts.each(&:save!)
+
+    if Mailboxer.uses_emails
       self.recipients.each do |r|
-      #Should send an email?
-        if Mailboxer.uses_emails
-          email_to = r.send(Mailboxer.email_method,self)
-          unless email_to.blank?
-            get_mailer.send_email(self,r).deliver
-          end
+        email_to = r.send(Mailboxer.email_method,self)
+        unless email_to.blank?
+          get_mailer.send_email(self,r).deliver
         end
       end
-      if reply
-        self.conversation.touch
-      end
-      self.recipients=nil
-    self.on_deliver_callback.call(self) unless self.on_deliver_callback.nil?
     end
+
+    if reply
+      self.conversation.touch
+    end
+
+    self.recipients=nil
+    self.on_deliver_callback.call(self) unless self.on_deliver_callback.nil?
+
     return sender_receipt
   end
 end

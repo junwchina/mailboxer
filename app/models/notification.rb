@@ -8,16 +8,16 @@ class Notification < ActiveRecord::Base
   has_many :receipts, :dependent => :destroy
 
   scope :recipient, lambda { |recipient|
-    joins(:receipts).where('receipts.receiver_id' => recipient.id,'receipts.receiver_type' => recipient.class.to_s)
+    joins(:receipts).where('receipts.receiver_id' => recipient.id,'receipts.receiver_type' => recipient.class.to_s).readonly(false)
   }
   scope :with_object, lambda { |obj|
     where('notified_object_id' => obj.id,'notified_object_type' => obj.class.to_s)
   }
   scope :not_trashed, lambda {
-    joins(:receipts).where('receipts.trashed' => false)
+    joins(:receipts).where('receipts.trashed' => false).readonly(false)
   }
   scope :unread,  lambda {
-    joins(:receipts).where('receipts.is_read' => false)
+    joins(:receipts).where('receipts.is_read' => false).readonly(false)
   }
 
   include Concerns::ConfigurableMailer
@@ -26,26 +26,21 @@ class Notification < ActiveRecord::Base
     #Sends a Notification to all the recipients
     def notify_all(recipients,subject,body,obj = nil,sanitize_text = true,notification_code=nil)
       notification = Notification.new({:body => body, :subject => subject})
-      notification.recipients = recipients.respond_to?(:each) ? recipients : [recipients]
-      notification.recipients = notification.recipients.uniq if recipients.respond_to?(:uniq)
+
+      ## convert recipients to array
+      notification.recipients = Array(recipients).uniq
+
       notification.notified_object = obj if obj.present?
+
       notification.notification_code = notification_code if notification_code.present?
+
       return notification.deliver sanitize_text
     end
 
     #Takes a +Receipt+ or an +Array+ of them and returns +true+ if the delivery was
     #successful or +false+ if some error raised
     def successful_delivery? receipts
-      case receipts
-      when Receipt
-        receipts.valid?
-        return receipts.errors.empty?
-       when Array
-         receipts.each(&:valid?)
-         return receipts.all? { |t| t.errors.empty? }
-       else
-         return false
-       end
+      Array(receipts).all?(&:valid?)
     end
   end
 
@@ -53,41 +48,35 @@ class Notification < ActiveRecord::Base
   #Use Mailboxer::Models::Message.notify and Notification.notify_all instead.
   def deliver(should_clean = true)
     self.clean if should_clean
-    temp_receipts = Array.new
-    #Receiver receipts
-    self.recipients.each do |r|
-      msg_receipt = Receipt.new
-      msg_receipt.notification = self
-      msg_receipt.is_read = false
-      msg_receipt.receiver = r
-      temp_receipts << msg_receipt
+
+    temp_receipts = self.recipients.map do |r|  
+      receipt = Receipt.new(:is_read => false)
+      receipt.notification = self 
+      receipt.receiver = r
+      receipt
     end
-    temp_receipts.each(&:valid?)
-    if temp_receipts.all? { |t| t.errors.empty? }
-      temp_receipts.each(&:save!)   #Save receipts
-      self.recipients.each do |r|
-        #Should send an email?
-        if Mailboxer.uses_emails
-          email_to = r.send(Mailboxer.email_method,self)
-          unless email_to.blank?
-            get_mailer.send_email(self,r).deliver
-          end
+
+    # if any error occurs, stop to deliver
+    return false if !temp_receipts.all?(&:valid?)
+    temp_receipts.each(&:save!)
+    
+    if Mailboxer.uses_emails
+      temp_receipts.each do |r|
+        email_to = r.send(Mailboxer.email_method,self)
+        unless email_to.blank?
+          get_mailer.send_email(self,r).deliver
         end
       end
-      self.recipients=nil
     end
-    return temp_receipts if temp_receipts.size > 1
-    return temp_receipts.first
+
+    self.recipients=nil
+    return temp_receipts
   end
 
   #Returns the recipients of the Notification
   def recipients
     if @recipients.blank?
-      recipients_array = Array.new
-      self.receipts.each do |receipt|
-        recipients_array << receipt.receiver
-      end
-    return recipients_array
+      @recipients = self.receipts.map(&:receiver)
     end
     return @recipients
   end
@@ -104,7 +93,6 @@ class Notification < ActiveRecord::Base
 
   #Returns if the participant have read the Notification
   def is_unread?(participant)
-    return false if participant.nil?
     return !self.receipt_for(participant).first.is_read
   end
 
@@ -114,31 +102,26 @@ class Notification < ActiveRecord::Base
 
   #Returns if the participant have trashed the Notification
   def is_trashed?(participant)
-    return false if participant.nil?
     return self.receipt_for(participant).first.trashed
   end
 
   #Mark the notification as read
   def mark_as_read(participant)
-    return if participant.nil?
     return self.receipt_for(participant).mark_as_read
   end
 
   #Mark the notification as unread
   def mark_as_unread(participant)
-    return if participant.nil?
     return self.receipt_for(participant).mark_as_unread
   end
 
   #Move the notification to the trash
   def move_to_trash(participant)
-    return if participant.nil?
     return self.receipt_for(participant).move_to_trash
   end
 
   #Takes the notification out of the trash
   def untrash(participant)
-    return if participant.nil?
     return self.receipt_for(participant).untrash
   end
 

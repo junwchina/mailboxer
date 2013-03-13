@@ -11,13 +11,14 @@ class Receipt < ActiveRecord::Base
   }
   #Notifications Scope checks type to be nil, not Notification because of STI behaviour
   #with the primary class (no type is saved)
-  scope :notifications_receipts, joins(:notification).where('notifications.type' => nil)
-  scope :messages_receipts, joins(:notification).where('notifications.type' => Message.to_s)
+  scope :notifications_receipts, joins(:notification).where('notifications.type' => nil).readonly(false)
+  scope :messages_receipts, joins(:notification).where('notifications.type' => Message.to_s).readonly(false)
+
   scope :notification, lambda { |notification|
     where(:notification_id => notification.id)
   }
   scope :conversation, lambda { |conversation|
-    joins(:message).where('notifications.conversation_id' => conversation.id)
+    joins(:message).where('notifications.conversation_id' => conversation.id).readonly(false)
   }
   scope :sentbox, where(:mailbox_type => "sentbox")
   scope :inbox, where(:mailbox_type => "inbox")

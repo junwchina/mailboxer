@@ -2,8 +2,9 @@ class Mailbox
   attr_accessor :type
   attr_reader :messageable
   #Initializer method
-  def initialize(messageable)
+  def initialize(messageable, type)
     @messageable = messageable
+    @type = type
   end
 
   #Returns the notifications for the messageable
@@ -109,13 +110,10 @@ class Mailbox
   #If object isn't one of the above, a nil will be returned
   def receipts_for(object)
     case object
-    when Message, Notification
-      return object.receipt_for(@messageable)
-    when Conversation
+    when Message, Notification, Conversation
       return object.receipts_for(@messageable)
     else
-    return nil
+      return nil
     end
   end
-
 end

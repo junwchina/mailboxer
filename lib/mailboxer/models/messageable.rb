@@ -39,8 +39,7 @@ module Mailboxer
 
       #Gets the mailbox of the messageable
       def mailbox
-        @mailbox = Mailbox.new(self) if @mailbox.nil?
-        @mailbox.type = :all
+        @mailbox = Mailbox.new(self, :all) if @mailbox.nil?
         return @mailbox
       end
 
@@ -59,8 +58,7 @@ module Mailboxer
         message.created_at = message_timestamp
         message.updated_at = message_timestamp
         message.conversation = convo
-        message.recipients = recipients.is_a?(Array) ? recipients : [recipients]
-        message.recipients = message.recipients.uniq
+        message.recipients = Array(recipients).uniq
         return message.deliver false,sanitize_text
       end
 
@@ -70,9 +68,7 @@ module Mailboxer
         subject = subject || "RE: #{conversation.subject}"
         response = messages.new({:body => reply_body, :subject => subject, :attachment => attachment})
         response.conversation = conversation
-        response.recipients = recipients.is_a?(Array) ? recipients : [recipients]
-        response.recipients = response.recipients.uniq
-        response.recipients.delete(self)
+        response.recipients = Array(recipients).uniq - Array(self)
         return response.deliver true, sanitize_text
       end
 
@@ -108,9 +104,7 @@ module Mailboxer
         case obj
         when Receipt
           return obj.mark_as_read if obj.receiver == self
-        when Message, Notification
-          obj.mark_as_read(self)
-        when Conversation
+        when Message, Notification, Conversation
           obj.mark_as_read(self)
         when Array
           obj.map{ |sub_obj| mark_as_read(sub_obj) }
@@ -131,9 +125,7 @@ module Mailboxer
         case obj
         when Receipt
           return obj.mark_as_unread if obj.receiver == self
-        when Message, Notification
-          obj.mark_as_unread(self)
-        when Conversation
+        when Message, Notification, Conversation
           obj.mark_as_unread(self)
         when Array
           obj.map{ |sub_obj| mark_as_unread(sub_obj) }
@@ -154,9 +146,7 @@ module Mailboxer
         case obj
         when Receipt
           return obj.move_to_trash if obj.receiver == self
-        when Message, Notification
-          obj.move_to_trash(self)
-        when Conversation
+        when Message, Notification, Conversation
           obj.move_to_trash(self)
         when Array
           obj.map{ |sub_obj| trash(sub_obj) }
@@ -177,9 +167,7 @@ module Mailboxer
         case obj
         when Receipt
           return obj.untrash if obj.receiver == self
-        when Message, Notification
-          obj.untrash(self)
-        when Conversation
+        when Message, Notification, Conversation
           obj.untrash(self)
         when Array
           obj.map{ |sub_obj| untrash(sub_obj) }
@@ -198,8 +186,8 @@ module Mailboxer
       end
 
 
-      # return messageable's notifications
-      def notifications 
+      # return messageable's notifications' receipts
+      def notifications_receipts
         receipts.notifications_receipts
       end
     end
